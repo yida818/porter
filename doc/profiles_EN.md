@@ -10,7 +10,7 @@
 
 ```
 	Spring-boot configuration file, configurable running environment (spring.profiles.active), etc. For details, please refer to the spring-boot official documentation.
-	The above parameters can also be specified via the startup.sh script, for example: startup.sh --logging.level.root=debug
+	The above parameters can also be specified via the porter-boot script, for example: porter-boot --logging.level.root=debug
 ```
 
 - config/application-${env}.properties
@@ -68,6 +68,7 @@
 
 ```
 	Specify the implementation strategy of the distributed cluster.
+	Optional parameters:ZOOKEEPER、STANDALONE
 	eg.
 		porter.cluster.strategy=ZOOKEEPER
 ```
@@ -76,6 +77,7 @@
 
 ```
 	Cluster connection parameters.
+	ZOOKEEPER strategy required.
 	eg.
 		porter.cluster.client.url=127.0.0.1:2181
 ```
@@ -84,8 +86,27 @@
 
 ```
 	Cluster connection timeout
+	ZOOKEEPER strategy required.
 	eg.
 		porter.cluster.client.sessionTimeout=overtime time, in milliseconds.
+```
+- porter.cluster.client.home
+
+```
+	meta data storeage
+	STANDALONE strategy required.
+	eg.
+		porter.cluster.client.home=path
+```
+
+- porter.cluster.statistic
+
+```
+    Client information about statistics,default zookeeper.manager-cluster is unneeded, if you choose zookeeper.
+    eg.
+    porter.cluster.statistic.sourceType=KAFKA_PRODUCE
+    porter.cluster.statistic.servers=127.0.0.1:9200
+    porter.cluster.statistic.topic=kafka topic
 ```
 
 ## Alert
@@ -99,6 +120,7 @@
 
 ```
 	Specify the alarm mode
+	Optional parameters:EMAIL、NONE
 	eg.
 		porter.alert.strategy=EMAIL
 ```
@@ -274,7 +296,7 @@
 	porter.task[0].consumer.source.topics=topic
 	porter.task[0].consumer.source.group=Consumer group
 	porter.task[0].consumer.source.autoCommit=true|false
-	
+	porter.task[0].consumer.source.partition=partition,default 0(3.0 add)
 ```
 
 - porter.task[index].consumer.metaSource
@@ -403,4 +425,3 @@
 	Field mapping, no need to configure.
 	porter.task[index].mapper[subscript].column.Source field name = target field name
 ```
-	

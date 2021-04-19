@@ -21,11 +21,11 @@ import com.alibaba.fastjson.JSONObject;
 import com.alibaba.fastjson.annotation.JSONField;
 import lombok.Getter;
 import lombok.Setter;
+import org.apache.commons.lang3.time.FastDateFormat;
 import org.slf4j.LoggerFactory;
 
-import java.text.DateFormat;
-import java.text.SimpleDateFormat;
 import java.util.Date;
+import java.util.UUID;
 
 /**
  * 统计信息
@@ -36,29 +36,30 @@ import java.util.Date;
  * @review: zhangkewei[zhang_kw@suixingpay.com]/2018年02月23日 16:37
  */
 
-public abstract class StatisticData {
+public class StatisticData {
+    //丢弃
+    @JSONField(serialize = false, deserialize = false)
+    public static final String NAME = "discard";
     @JSONField(serialize = false, deserialize = false)
     protected static final org.slf4j.Logger LOGGER = LoggerFactory.getLogger(StatisticData.class);
     @JSONField(serialize = false, deserialize = false)
-    private final DateFormat idDateFormat = new SimpleDateFormat("yyyyMMddHHmmssSSS");
-    //节点ID
+    private final FastDateFormat idDateFormat = FastDateFormat.getInstance("yyyyMMddHHmmssSSS");
+    // 节点ID
     @Setter
     @Getter
     private String nodeId;
-
+    @Getter @Setter private String category;
+    public StatisticData() {
+        category = NAME;
+    }
     /**
-     * getCategory
+     * 需要子类继承
      * @return
      */
     @JSONField(serialize = false, deserialize = false)
-    public abstract String getCategory();
-
-    /**
-     * getSubId
-     * @return
-     */
-    @JSONField(serialize = false, deserialize = false)
-    protected abstract String getSubId();
+    protected  String getSubId() {
+        return UUID.randomUUID().toString();
+    }
 
     /**
      * StringBuilder
@@ -66,9 +67,13 @@ public abstract class StatisticData {
      */
     @JSONField(serialize = false, deserialize = false)
     public String getId() {
-        return new StringBuilder(nodeId).append("-").append(getSubId()).append("-").append(idDateFormat.format(new Date())).toString();
+        return new StringBuilder(getKey()).append("-").append(idDateFormat.format(new Date())).toString();
     }
 
+    @JSONField(serialize = false, deserialize = false)
+    public String getKey() {
+        return new StringBuilder(nodeId).append("-").append(getSubId()).toString();
+    }
     /**
      * toString
      * @return

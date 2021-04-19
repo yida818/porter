@@ -17,11 +17,10 @@
 
 package cn.vbill.middleware.porter.task.alert;
 
-import cn.vbill.middleware.porter.common.statistics.NodeLog;
 import cn.vbill.middleware.porter.core.NodeContext;
-import cn.vbill.middleware.porter.core.consumer.DataConsumer;
-import cn.vbill.middleware.porter.core.loader.DataLoader;
-import cn.vbill.middleware.porter.core.task.AbstractStageJob;
+import cn.vbill.middleware.porter.core.task.consumer.DataConsumer;
+import cn.vbill.middleware.porter.core.task.loader.DataLoader;
+import cn.vbill.middleware.porter.core.task.job.AbstractStageJob;
 import cn.vbill.middleware.porter.task.alert.alerter.AlerterFactory;
 import cn.vbill.middleware.porter.task.worker.TaskWork;
 import org.slf4j.Logger;
@@ -63,18 +62,18 @@ public class AlertJob extends AbstractStageJob {
     }
 
     @Override
-    protected void loopLogic() {
+    protected void loopLogic() throws InterruptedException {
         //10秒执行一次
-        try {
-            alerterFactory.check(dataConsumer, dataLoader, work);
-        } catch (Throwable e) {
-            NodeLog.upload(NodeLog.LogType.TASK_LOG, work.getTaskId(), work.getDataConsumer().getSwimlaneId(), "db check error" + e.getMessage());
-            LOGGER.error("[{}][{}]db check error!", work.getTaskId(), dataConsumer.getSwimlaneId(), e);
-        }
+        alerterFactory.check(dataConsumer, dataLoader, work);
     }
 
     @Override
-    public <T> T output() throws Exception {
-        throw new Exception("unsupported Method");
+    public <T> T output() throws UnsupportedOperationException {
+        throw new UnsupportedOperationException("unsupported Method");
+    }
+
+    @Override
+    protected boolean workingStat() {
+        return work.isWorking();
     }
 }

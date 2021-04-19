@@ -45,12 +45,12 @@ public class MonitorScheduler {
      * @param: []
      * @return: void
      */
-    @Scheduled(cron = "0 0 2 * * ? ")
-    @Transactional
-    public void transferDataScheduler() {
-        logger.info("启动定时器，转移删除前天以前的数据");
-        monitorScheduledService.transferDataTask();
-    }
+//    @Scheduled(cron = "0 0 2 * * ? ")
+//    @Transactional
+//    public void transferDataScheduler() {
+//        logger.info("启动定时器，转移删除前天以前的数据");
+//        monitorScheduledService.transferDataTask();
+//    }
 
     /**
      * 每天凌晨3点启动定时器，删除存在30天以前的表
@@ -62,7 +62,25 @@ public class MonitorScheduler {
      */
     @Scheduled(cron = "0 0 3 * * ? ")
     public void dropTableScheduler() {
-        logger.info("启动定时器，删除存在30天的表");
-        monitorScheduledService.dropTableTask();
+        try {
+            logger.info("启动定时器，删除存在30天的表");
+            monitorScheduledService.dropTableTask();
+        } catch (Throwable e) {
+            logger.error("删除存在30天的表失败，异常信息:[{}]", e);
+        }
+    }
+
+    /**
+     * 每天凌晨2点启动定时器，生成后天的表，检查明天的表是否生成，没生成则生成
+     */
+    @Scheduled(cron = "0 0 2 * * ? ")
+    @Transactional
+    public void createTableScheduler() {
+        try {
+            logger.info("启动定时器，创建数据库表");
+            monitorScheduledService.createTableTask();
+        } catch (Throwable e) {
+            logger.error("定时任务创建表失败，异常信息:[{}]", e);
+        }
     }
 }

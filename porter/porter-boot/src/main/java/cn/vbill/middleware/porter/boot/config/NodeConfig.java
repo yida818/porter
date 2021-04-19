@@ -17,10 +17,10 @@
 
 package cn.vbill.middleware.porter.boot.config;
 
-import cn.vbill.middleware.porter.common.config.AlertConfig;
-import cn.vbill.middleware.porter.common.config.ClusterConfig;
+import cn.vbill.middleware.porter.common.warning.config.WarningConfig;
+import cn.vbill.middleware.porter.common.cluster.config.ClusterConfig;
 import cn.vbill.middleware.porter.common.config.StatisticConfig;
-import cn.vbill.middleware.porter.common.config.TaskConfig;
+import cn.vbill.middleware.porter.common.task.config.TaskConfig;
 import lombok.Getter;
 import lombok.Setter;
 import org.springframework.boot.context.properties.ConfigurationProperties;
@@ -28,6 +28,7 @@ import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 
 /**
  * @author: zhangkewei[zhang_kw@suixingpay.com]
@@ -40,11 +41,15 @@ import java.util.List;
 @Getter
 @Component
 public class NodeConfig {
-    private String id;
+    private String id = UUID.randomUUID().toString();
     private Integer workLimit = 10;
     private StatisticConfig statistic = new StatisticConfig();
-    private AlertConfig alert;
+    private WarningConfig alert;
     private ClusterConfig cluster;
     private List<TaskConfig> task = new ArrayList<>();
+
+    //允许默认定时GC
+    private boolean gc = false;
+    private Integer gcDelayOfMinutes = 30;
 }
 

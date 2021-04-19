@@ -17,13 +17,15 @@
 
 package cn.vbill.middleware.porter.task.extract;
 
-import cn.vbill.middleware.porter.common.statistics.NodeLog;
+import cn.vbill.middleware.porter.common.node.statistics.NodeLog;
+import cn.vbill.middleware.porter.common.task.exception.TaskStopTriggerException;
 import cn.vbill.middleware.porter.core.NodeContext;
-import cn.vbill.middleware.porter.core.event.etl.ETLBucket;
-import cn.vbill.middleware.porter.core.task.StageType;
+import cn.vbill.middleware.porter.core.task.setl.ETLBucket;
+import cn.vbill.middleware.porter.core.task.job.StageType;
+import cn.vbill.middleware.porter.core.task.TaskContext;
 import cn.vbill.middleware.porter.task.extract.extractor.ExtractorFactory;
-import cn.vbill.middleware.porter.core.event.s.MessageEvent;
-import cn.vbill.middleware.porter.core.task.AbstractStageJob;
+import cn.vbill.middleware.porter.core.message.MessageEvent;
+import cn.vbill.middleware.porter.core.task.job.AbstractStageJob;
 import cn.vbill.middleware.porter.datacarrier.DataCarrier;
 import cn.vbill.middleware.porter.datacarrier.DataCarrierFactory;
 import cn.vbill.middleware.porter.task.worker.TaskWork;
@@ -33,10 +35,7 @@ import org.slf4j.LoggerFactory;
 
 
 import java.util.List;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.ThreadPoolExecutor;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 
 /**
  * 完成事件的进一步转换、过滤。多线程执行
@@ -76,18 +75,34 @@ public class ExtractJob extends AbstractStageJob {
     @Override
     protected void doStop() {
         executorService.shutdown();
+        try {
+            if (null != metadata.getProcessor()) metadata.getProcessor().shutdown();
+        } catch (Throwable e) {
+            LOGGER.error("自定义Extract processor关闭出错", e);
+            TaskContext.warning(new NodeLog(NodeLog.LogType.WARNING, "自定义Extract processor关闭出错:" + e.getMessage())
+                    .bindTaskId(TaskContext.taskId()).bindSwimlaneId(TaskContext.swimlaneId())
+                    .bindRelationship(TaskContext.taskOwnerInfo())
+                    .upload());
+        }
     }
 
     @Override
     protected void doStart() {
-
+        try {
+            if (null != metadata.getProcessor()) metadata.getProcessor().start();
+        } catch (Throwable e) {
+            LOGGER.error("自定义Extract processor启动出错", e);
+            TaskContext.warning(new NodeLog(NodeLog.LogType.WARNING, "自定义Extract processor启动出错:" + e.getMessage())
+                    .bindTaskId(TaskContext.taskId()).bindSwimlaneId(TaskContext.swimlaneId())
+                    .bindRelationship(TaskContext.taskOwnerInfo()).upload());
+        }
     }
 
     @Override
     protected void loopLogic() throws InterruptedException {
         //只要队列有消息，持续读取
         Pair<String, List<MessageEvent>> events = null;
-        do {
+        while (getWorkingStat()) {
             try {
                 events = work.waitEvent(StageType.SELECT);
                 if (null != events) {
@@ -104,24 +119,21 @@ public class ExtractJob extends AbstractStageJob {
                             carrier.push(bucket);
                             LOGGER.debug("push bucket {} into carrier after extract.", inThreadEvents.getLeft());
                         } catch (Throwable e) {
-                            work.stopAndAlarm(e.getMessage());
+                            work.interruptWithWarning(e.getMessage());
                             LOGGER.error("批次[{}]执行ExtractJob失败!", inThreadEvents.getLeft(), e);
                         }
                     });
                 }
-            } catch (InterruptedException interrupt) {
-                throw interrupt;
-            } catch (Throwable e) {
-                e.printStackTrace();
-                NodeLog.upload(NodeLog.LogType.TASK_LOG, work.getTaskId(),  work.getDataConsumer().getSwimlaneId(),
-                        "extract MessageEvent error" + e.getMessage());
-                LOGGER.error("extract MessageEvent error!", e);
+            } catch (TaskStopTriggerException stopError) {
+                LOGGER.error("ExtractJob error", stopError);
+                work.interruptWithWarning(stopError.getMessage());
+                break;
             }
-        } while (null != events);
+        }
     }
 
     @Override
-    public ETLBucket output() {
+    public ETLBucket output() throws InterruptedException {
         return carrier.pull();
     }
 
@@ -132,7 +144,7 @@ public class ExtractJob extends AbstractStageJob {
      * @param: []
      * @return: T
      */
-    public <T> T getNextSequence() {
+    public <T> T getNextSequence() throws InterruptedException {
         return orderedBucket.pull();
     }
 
@@ -149,5 +161,10 @@ public class ExtractJob extends AbstractStageJob {
     @Override
     public boolean stopWaiting() {
         return work.getDataConsumer().isAutoCommitPosition();
+    }
+
+    @Override
+    protected boolean workingStat() {
+        return work.isWorking();
     }
 }

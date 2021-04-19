@@ -17,6 +17,7 @@
 
 package cn.vbill.middleware.porter.manager.web.mvc;
 
+import cn.vbill.middleware.porter.manager.web.rcc.RoleCheckContext;
 import cn.vbill.middleware.porter.manager.web.tl.WebToeknContext;
 import com.alibaba.fastjson.JSON;
 import cn.vbill.middleware.porter.manager.web.token.TokenUtil;
@@ -52,23 +53,29 @@ public class XTokenInterceptor extends HandlerInterceptorAdapter {
             if (!(handler instanceof HandlerMethod)) {
                 return true;
             }
-//            // 从切点上获取目标方法
-//            HandlerMethod handlerMethod = (HandlerMethod) handler;
-//            Method method = handlerMethod.getMethod();
-//            // 若目标方法忽略了安全性检查，则直接调用目标方法
-//            if (method.isAnnotationPresent(IgnoreToken.class)) {
-//                return true;
-//            }
+            // // 从切点上获取目标方法
+            // HandlerMethod handlerMethod = (HandlerMethod) handler;
+            // Method method = handlerMethod.getMethod();
+            // // 若目标方法忽略了安全性检查，则直接调用目标方法
+            // if (method.isAnnotationPresent(IgnoreToken.class)) {
+            // return true;
+            // }
             // 校验token
             String token = request.getHeader("X-Token");
             log.info("传入的token值:{}", token);
             if (StringUtils.isEmpty(token) || !TokenUtil.isValid(token)) {
                 log.info("token校验错误");
-                response.setStatus(HttpStatus.UNAUTHORIZED.value());
-                response.getWriter().append(JSON.toJSONString(new AuthorizedBody("401", "token Check the error")));
+                if (uri.startsWith("/alarm") || uri.startsWith("/manager")) {
+                    response.setStatus(HttpStatus.UNAUTHORIZED.value());
+                    response.getWriter().append(JSON.toJSONString(new AuthorizedBody("401", "token Check the error")));
+                } else {
+                    request.getRequestDispatcher("/index.html").forward(request, response);
+                    response.setStatus(HttpStatus.OK.value());
+                }
                 return false;
             }
             WebToeknContext.initToken(token);
+            RoleCheckContext.checkUserRole(token);
             return true;
         } catch (Exception e) {
             return false;

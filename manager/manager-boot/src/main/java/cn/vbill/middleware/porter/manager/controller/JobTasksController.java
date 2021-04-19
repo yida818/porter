@@ -19,12 +19,10 @@ package cn.vbill.middleware.porter.manager.controller;
 
 import static cn.vbill.middleware.porter.manager.web.message.ResponseMessage.ok;
 
+import java.io.UnsupportedEncodingException;
 import java.util.List;
 
-import cn.vbill.middleware.porter.common.cluster.ClusterProviderProxy;
-import cn.vbill.middleware.porter.common.dic.TaskStatusType;
-import cn.vbill.middleware.porter.manager.core.entity.JobTasks;
-import cn.vbill.middleware.porter.manager.service.JobTasksService;
+import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -39,10 +37,17 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.alibaba.fastjson.JSON;
-import cn.vbill.middleware.porter.common.cluster.command.TaskPushCommand;
+
+import cn.vbill.middleware.porter.common.cluster.ClusterProviderProxy;
+import cn.vbill.middleware.porter.common.cluster.event.command.TaskPushCommand;
+import cn.vbill.middleware.porter.common.cluster.impl.AbstractClusterListener;
+import cn.vbill.middleware.porter.common.task.config.TaskConfig;
+import cn.vbill.middleware.porter.common.task.dic.TaskStatusType;
+import cn.vbill.middleware.porter.common.warning.entity.WarningOwner;
+import cn.vbill.middleware.porter.manager.core.entity.JobTasks;
+import cn.vbill.middleware.porter.manager.service.JobTasksService;
 import cn.vbill.middleware.porter.manager.web.message.ResponseMessage;
 import cn.vbill.middleware.porter.manager.web.page.Page;
-
 import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;
 import io.swagger.annotations.ApiParam;
@@ -93,12 +98,14 @@ public class JobTasksController {
     @ApiOperation(value = "查询分页", notes = "查询分页")
     public ResponseMessage list(@RequestParam(value = "pageNo", required = true) Integer pageNo,
             @RequestParam(value = "pageSize", required = true) Integer pageSize,
+            @RequestParam(value = "jobId", required = false) Long jobId,
             @RequestParam(value = "jobName", required = false) String jobName,
             @RequestParam(value = "beginTime", required = false) String beginTime,
             @RequestParam(value = "endTime", required = false) String endTime,
-            @RequestParam(value = "jobState", required = false) TaskStatusType jobState) {
-        Page<JobTasks> page = jobTasksService.page(new Page<>(pageNo, pageSize), jobName, beginTime, endTime, jobState,
-                1);
+            @RequestParam(value = "jobState", required = false) TaskStatusType jobState,
+            @RequestParam(value = "id", required = false) Long id) {
+        Page<JobTasks> page = jobTasksService.page(new Page<>(pageNo, pageSize), jobName, jobId, beginTime, endTime, jobState,
+                1, id);
         return ok(page);
     }
 
@@ -107,20 +114,23 @@ public class JobTasksController {
      *
      * @author FuZizheng
      * @date 2018/8/9 下午4:23
-     * @param: [pageNo, pageSize, jobName, beginTime, endTime, jobState, jobType]
+     * @param: [pageNo,
+     *             pageSize, jobName, beginTime, endTime, jobState, jobType]
      * @return: cn.vbill.middleware.porter.manager.web.message.ResponseMessage
      */
     @GetMapping("/page")
     @ApiOperation(value = "查询分页", notes = "查询分页")
     public ResponseMessage page(@RequestParam(value = "pageNo", required = true) Integer pageNo,
             @RequestParam(value = "pageSize", required = true) Integer pageSize,
+            @RequestParam(value = "jobId", required = false) Long jobId,
             @RequestParam(value = "jobName", required = false) String jobName,
             @RequestParam(value = "beginTime", required = false) String beginTime,
             @RequestParam(value = "endTime", required = false) String endTime,
             @RequestParam(value = "jobState", required = false) TaskStatusType jobState,
-            @RequestParam(value = "jobType", required = false) Integer jobType) {
-        Page<JobTasks> page = jobTasksService.page(new Page<>(pageNo, pageSize), jobName, beginTime, endTime, jobState,
-                jobType);
+            @RequestParam(value = "jobType", required = false) Integer jobType,
+            @RequestParam(value = "id", required = false) Long id) {
+        Page<JobTasks> page = jobTasksService.page(new Page<>(pageNo, pageSize), jobName, jobId, beginTime, endTime, jobState,
+                jobType, id);
         return ok(page);
     }
 
@@ -165,7 +175,7 @@ public class JobTasksController {
      * @return: ResponseMessage
      */
     @PostMapping
-    @ApiOperation(value = "新增", notes = "新增")
+    @ApiOperation(value = "新增普通任务", notes = "新增普通任务")
     public ResponseMessage add(@RequestBody JobTasks jobTasks) {
         Integer number = jobTasksService.insert(jobTasks);
         return ok(number);
@@ -180,10 +190,59 @@ public class JobTasksController {
      * @return: ResponseMessage
      */
     @PutMapping
-    @ApiOperation(value = "修改", notes = "修改")
+    @ApiOperation(value = "修改普通任务", notes = "修改普通任务")
     public ResponseMessage update(@RequestBody JobTasks jobTasks) {
         Integer number = jobTasksService.update(jobTasks);
         return ok(number);
+    }
+
+    /**
+     * 新增特殊任务
+     * 
+     * @param jobTasks
+     * @return
+     */
+    @PostMapping("/addspecial")
+    @ApiOperation(value = "新增特殊任务", notes = "新增特殊任务")
+    public ResponseMessage addSpecial(@RequestBody JobTasks jobTasks) {
+        Integer number = jobTasksService.insertZKCapture(jobTasks, TaskStatusType.NEW);
+        return ok(number);
+    }
+
+    /**
+     * 修改特殊任务
+     * 
+     * @param jobTasks
+     * @return
+     */
+    @PutMapping("/updatespecial")
+    @ApiOperation(value = "修改特殊任务", notes = "修改特殊任务")
+    public ResponseMessage updateSpecial(@RequestBody JobTasks jobTasks) {
+        Integer number = jobTasksService.updateZKCapture(jobTasks, TaskStatusType.NEW);
+        return ok(number);
+    }
+
+    /**
+     * 解析特殊配置
+     * 
+     * @param jobTasks
+     * @return
+     */
+    @PostMapping(value = "/dealspecialjson")
+    @ApiOperation(value = "解析字符串", notes = "解析字符串")
+    public ResponseMessage dealSpecialJson(@RequestBody JobTasks jobTasks) {
+        String jobXmlText = jobTasks.getJobXmlText();
+        log.info("传入字符串:[{}]", jobXmlText);
+        try {
+            String taskConfigJson = java.net.URLDecoder.decode(jobXmlText, "UTF-8");
+            log.info("转移后字符串:[{}]", taskConfigJson);
+            TaskConfig taskConfig = jobTasksService.dealSpecialJson(taskConfigJson);
+            log.info("解析后字符串:[{}]", JSON.toJSON(taskConfig));
+            return ok(taskConfig);
+        } catch (UnsupportedEncodingException e) {
+            log.error("输入数据解析失败!", e);
+            return ResponseMessage.error("输入数据解析失败!");
+        }
     }
 
     /**
@@ -201,13 +260,30 @@ public class JobTasksController {
             @RequestParam("taskStatusType") TaskStatusType taskStatusType) {
         Integer number = jobTasksService.updateState(id, taskStatusType);
         if (taskStatusType == TaskStatusType.WORKING || taskStatusType == TaskStatusType.STOPPED) {
+            //任务信息
             try {
                 TaskPushCommand config = new TaskPushCommand(jobTasksService.fitJobTask(id, taskStatusType));
-                ClusterProviderProxy.INSTANCE.broadcast(config);
+                ClusterProviderProxy.INSTANCE.broadcastEvent(config);
                 log.info("zk任务Id:[{}] 状态:[{}] 详情:[{}].", id, taskStatusType, JSON.toJSONString(config));
             } catch (Exception e) {
-                log.error("zk变更任务Id[{}] 状态[{}]失败,请关注！", id, taskStatusType);
-                e.printStackTrace();
+                jobTasksService.updateState(id,
+                        taskStatusType == TaskStatusType.WORKING ? TaskStatusType.STOPPED : TaskStatusType.WORKING);
+                log.error("zk变更任务Id[{}] 状态[{}]失败,请关注！", id, taskStatusType, e);
+                return ResponseMessage.error("变更任务失败！");
+            }
+            //权限信息(附邮箱)
+            try {
+                WarningOwner warningOwner = jobTasksService.selectJobWarningOwner(id);
+                ClusterProviderProxy.INSTANCE.broadcastEvent(client -> {
+                    String nodePath = AbstractClusterListener.BASE_CATALOG + "/task/" + id + "/owner";
+                    if (!StringUtils.isBlank(nodePath)) {
+                        client.changeData(nodePath, false, false, JSON.toJSONString(warningOwner));
+                    }
+                });
+                log.info("zk变更任务id[{}]权限数据到zk成功,详细信息[{}]!", id, JSON.toJSONString(warningOwner));
+            } catch (Exception e) {
+                log.error("zk变更任务id[{}]权限数据到zk失败,请关注！", id, e);
+                return ResponseMessage.error("变更任务权限失败，请关注！");
             }
         }
         return ok(number);
@@ -226,14 +302,44 @@ public class JobTasksController {
     public ResponseMessage delete(@PathVariable("id") Long id) {
         Integer number = jobTasksService.delete(id);
         if (number == 1) {
+            //任务信息
             try {
                 ClusterProviderProxy.INSTANCE
-                        .broadcast(new TaskPushCommand(jobTasksService.fitJobTask(id, TaskStatusType.DELETED)));
+                        .broadcastEvent(new TaskPushCommand(jobTasksService.fitJobTask(id, TaskStatusType.DELETED)));
             } catch (Exception e) {
-                log.error("zk删除任务节点[{}]失败,请关注！", id);
-                e.printStackTrace();
+                log.error("zk删除任务节点[{}]失败,请关注！", id, e);
+                return ResponseMessage.error("zk删除任务节点失败！");
+            }
+            //权限信息(附邮箱)
+            try {
+                ClusterProviderProxy.INSTANCE.broadcastEvent(client -> {
+                    String nodePath = AbstractClusterListener.BASE_CATALOG + "/task/" + id + "/owner";
+                    if (!StringUtils.isBlank(nodePath)) {
+                        client.delete(nodePath);
+                    }
+                });
+                log.info("zk删除任务id[{}]权限数据成功!", id);
+            } catch (Exception e) {
+                log.error("zk删除任务id[{}]权限数据失败,请关注！", id, e);
+                return ResponseMessage.error("删除任务权限失败，请关注！");
             }
         }
         return ok(number);
     }
+
+    /**
+     * 显示任务id下拉框
+     *
+     * @author FuZizheng
+     * @date 2019/2/19 2:07 PM
+     * @param: []
+     * @return: cn.vbill.middleware.porter.manager.web.message.ResponseMessage
+     */
+    @GetMapping("/showjobIdList")
+    @ApiOperation(value = "显示任务id", notes = "显示任务id")
+    public ResponseMessage jobIdList() {
+        List<Long> jobIds = jobTasksService.showjobIdList();
+        return ok(jobIds);
+    }
+
 }

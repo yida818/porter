@@ -17,26 +17,27 @@
 
 package cn.vbill.middleware.porter.task.worker;
 
+import cn.vbill.middleware.porter.common.cluster.ClusterProviderProxy;
+import cn.vbill.middleware.porter.common.cluster.event.command.TaskRegisterCommand;
 import cn.vbill.middleware.porter.common.exception.ClientException;
 import cn.vbill.middleware.porter.common.exception.ConfigParseException;
-import cn.vbill.middleware.porter.common.exception.DataConsumerBuildException;
-import cn.vbill.middleware.porter.common.exception.DataLoaderBuildException;
-import cn.vbill.middleware.porter.common.exception.TaskLockException;
-import cn.vbill.middleware.porter.common.statistics.NodeLog;
+import cn.vbill.middleware.porter.common.task.exception.DataConsumerBuildException;
+import cn.vbill.middleware.porter.common.task.exception.DataLoaderBuildException;
+import cn.vbill.middleware.porter.common.task.exception.TaskLockException;
+import cn.vbill.middleware.porter.common.task.exception.WorkResourceAcquireException;
 import cn.vbill.middleware.porter.common.util.DefaultNamedThreadFactory;
-import cn.vbill.middleware.porter.core.task.Task;
-import cn.vbill.middleware.porter.common.config.TaskConfig;
-import cn.vbill.middleware.porter.core.task.TableMapper;
+import cn.vbill.middleware.porter.common.warning.entity.WarningOwner;
+import cn.vbill.middleware.porter.core.NodeContext;
+import cn.vbill.middleware.porter.core.task.consumer.DataConsumer;
+import cn.vbill.middleware.porter.core.task.entity.Task;
+import cn.vbill.middleware.porter.common.task.config.TaskConfig;
+import cn.vbill.middleware.porter.core.task.entity.TableMapper;
+import cn.vbill.middleware.porter.task.TaskController;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
+import java.util.*;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -55,19 +56,21 @@ public class TaskWorker {
     private final AtomicBoolean stat = new AtomicBoolean(false);
     //负责将任务工作者的状态定时上传
     private final ScheduledExecutorService workerStatJob;
-
+    private final TaskController controller;
 
     /**
      * consumeSourceId -> work
      */
-    private final Map<String, TaskWork> jobs;
+    private final Map<String, ArrayBlockingQueue<TaskWork>> jobs;
     private final Map<String, TableMapper> tableMappers;
+    private volatile WarningOwner owner;
 
-    public TaskWorker() {
+    public TaskWorker(TaskController controller) {
         workerStatJob = Executors.newSingleThreadScheduledExecutor(new DefaultNamedThreadFactory("TaskStat"));
         jobs = new ConcurrentHashMap<>();
         workerSequence = SEQUENCE.incrementAndGet();
         tableMappers = new ConcurrentHashMap<>();
+        this.controller = controller;
     }
 
     /**
@@ -83,23 +86,14 @@ public class TaskWorker {
             workerStatJob.scheduleAtFixedRate(new Runnable() {
                 @Override
                 public void run() {
-                    //如果没有JOB，让线程睡眠1分钟.
-                    if (jobs.isEmpty()) {
-                        try {
-                            Thread.sleep(60000);
-                        } catch (InterruptedException e) {
-                            Thread.interrupted();
-                            e.printStackTrace();
-                        }
-                    }
                     //每1秒上传一次消费进度
-                    for (TaskWork job : jobs.values()) {
-                        job.submitStat();
+                    for (ArrayBlockingQueue<TaskWork> job : jobs.values()) {
+                        job.peek().submitStat();
                     }
                 }
             }, 0, 1, TimeUnit.MINUTES);
         } else {
-            LOGGER.warn("TaskWorker[] has started already", workerSequence);
+            LOGGER.warn("TaskWorker[{}] has started already", workerSequence);
         }
     }
 
@@ -110,16 +104,21 @@ public class TaskWorker {
      * @param: []
      * @return: void
      */
-    public void stop() {
+    public List<TaskWork> stop() {
         if (stat.compareAndSet(true, false)) {
+            List<TaskWork> works = new ArrayList<>(jobs.size());
             LOGGER.info("工人下线.......");
-            workerStatJob.shutdown();
-            for (TaskWork job : jobs.values()) {
-                job.stop();
+            workerStatJob.shutdownNow();
+            for (ArrayBlockingQueue<TaskWork> job : jobs.values()) {
+                TaskWork work = job.peek();
+                work.stopWork();
+                works.add(work);
             }
+            return works;
         } else {
             LOGGER.warn("TaskWorker[] has stopped already", workerSequence);
         }
+        return Collections.emptyList();
     }
 
     /**
@@ -132,11 +131,11 @@ public class TaskWorker {
     public void stopJob(String... swimlaneId) {
         Arrays.stream(swimlaneId).forEach(c -> {
             if (jobs.containsKey(c)) {
-                jobs.get(c).stop();
-                jobs.remove(c);
+                jobs.get(c).peek().stopWork();
             }
         });
     }
+
 
     /**
      * alloc
@@ -152,25 +151,16 @@ public class TaskWorker {
             tableMappers.putIfAbsent(m.getUniqueKey(task.getTaskId()), m);
         });
         //根据DataConsumer所使用ConsumeClient的消费拆分细则拆分consumer
-        task.getConsumers().forEach(c -> {
-            TaskWork job = null;
+        for (DataConsumer c : task.getConsumers()) {
             try {
-                //启动JOB
-                job = new TaskWork(c, task.getLoader(), task.getTaskId(), task.getReceivers(), this, task.getPositionCheckInterval(),
+                TaskWork job = new TaskWork(c, task.getLoader(), task.getTaskId(), task.getReceivers(), this, task.getPositionCheckInterval(),
                         task.getAlarmPositionCount());
+                register(c.getSwimlaneId(), job);
                 job.start();
-                jobs.put(c.getSwimlaneId(), job);
-            } catch (TaskLockException e) {
-                LOGGER.error("Consumer JOB[{}] failed to start!", c.getSwimlaneId(), e);
-                NodeLog.upload(NodeLog.LogType.TASK_LOG, task.getTaskId(), c.getSwimlaneId(), e.getMessage());
             } catch (Throwable e) {
-                e.printStackTrace();
-            } finally {
-                if (null != job) {
-                    job.stop();
-                }
+                LOGGER.info("work[{}-{}]启动失败:{}", task.getTaskId(), c.getSwimlaneId(), e.getMessage());
             }
-        });
+        }
     }
 
     public Map<String, TableMapper> getTableMapper() {
@@ -179,5 +169,48 @@ public class TaskWorker {
 
     public boolean isNoWork() {
         return jobs.isEmpty();
+    }
+
+    private void register(String swimlaneId, TaskWork work) throws InterruptedException, TaskLockException, WorkResourceAcquireException {
+        boolean offer = jobs.computeIfAbsent(swimlaneId, key -> new ArrayBlockingQueue<>(1)).offer(work);
+        if (!offer) throw new WorkResourceAcquireException("已有运行中的任务" + swimlaneId);
+        //申请work资源
+        if (!NodeContext.INSTANCE.acquireWork()) {
+            jobs.remove(swimlaneId);
+            throw new WorkResourceAcquireException("申请worker资源失败,未申请到可供任务执行的资源");
+        }
+        try {
+            //会抛出分布式锁任务抢占异常
+            ClusterProviderProxy.INSTANCE.broadcastEvent(new TaskRegisterCommand(work.getTaskId(), swimlaneId));
+        } catch (Throwable e) {
+            jobs.remove(swimlaneId);
+            NodeContext.INSTANCE.releaseWork();
+            throw new TaskLockException(e);
+        }
+    }
+
+    protected void unregister(String swimlaneId) {
+        ArrayBlockingQueue<TaskWork> queue = jobs.remove(swimlaneId);
+        if (null != queue) {
+            queue.poll();
+            NodeContext.INSTANCE.releaseWork();
+        }
+    }
+
+    protected void  stopWork(String taskId, String...swimlaneId) {
+        controller.stopTask(taskId, swimlaneId);
+    }
+
+    public void  transmit(WarningOwner owner) {
+        this.owner = owner;
+        jobs.forEach((k, v) -> {
+            TaskWork work = v.peek();
+            if (null != work) {
+                work.transmit();
+            }
+        });
+    }
+    protected final WarningOwner getOwner() {
+        return owner;
     }
 }

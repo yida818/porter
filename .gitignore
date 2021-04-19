@@ -19,8 +19,8 @@ gradle
 /gradlew
 gradlew*
 .springBeans
-#application.properties
 *.cache
 *.log
 .factorypath
 *sonar*
+.porter

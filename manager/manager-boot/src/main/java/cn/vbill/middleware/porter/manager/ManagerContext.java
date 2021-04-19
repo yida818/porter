@@ -17,13 +17,16 @@
 
 package cn.vbill.middleware.porter.manager;
 
-import org.apache.commons.collections.list.TreeList;
+import cn.vbill.middleware.porter.common.warning.entity.WarningMessage;
+import cn.vbill.middleware.porter.common.warning.entity.WarningReceiver;
 import org.springframework.context.ApplicationContext;
 
-import java.util.Collections;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
 
 /**
  * @author: zhangkewei[zhang_kw@suixingpay.com]
@@ -38,8 +41,10 @@ public enum ManagerContext {
      * INSTANCE
      */
     INSTANCE();
+
     private ApplicationContext context;
-    private final Map<String, List<String>> stoppedTask = new ConcurrentHashMap<>();
+    private final Map<List<String>, WarningMessage> taskErrorMarked = new ConcurrentHashMap<>();
+    private volatile List<WarningReceiver> receivers = new ArrayList<>();
 
     /**
      * 获取Bean
@@ -63,8 +68,8 @@ public enum ManagerContext {
      * @param: [taskId, swimlaneId]
      * @return: void
      */
-    public void newStoppedTask(String taskId, String swimlaneId) {
-        stoppedTask.computeIfAbsent(taskId, key -> new TreeList()).add(swimlaneId);
+    public void newStoppedTask(List<String> key, WarningMessage message) {
+        taskErrorMarked.put(key, message);
     }
 
     /**
@@ -74,15 +79,21 @@ public enum ManagerContext {
      * @param: [taskId, swimlaneId]
      * @return: void
      */
-    public void removeStoppedTask(String taskId, String swimlaneId) {
-        List<String> swimlanes = stoppedTask.computeIfAbsent(taskId, key -> new TreeList());
-        swimlanes.remove(swimlaneId);
-        if (swimlanes.isEmpty()) {
-            stoppedTask.remove(taskId);
-        }
+    public void removeStoppedTask(List<String> key) {
+        taskErrorMarked.remove(key);
     }
 
-    public Map<String, List<String>> getStoppedTasks() {
-        return Collections.unmodifiableMap(stoppedTask);
+    public List<String> getStoppedTasks() {
+        return taskErrorMarked.values().stream().map(WarningMessage::getTitle).collect(Collectors.toList());
+    }
+
+
+
+    public synchronized void addWarningReceivers(WarningReceiver[] newReceivers) {
+        receivers.addAll(Arrays.asList(newReceivers));
+    }
+
+    public List<WarningReceiver> getReceivers() {
+        return receivers;
     }
 }

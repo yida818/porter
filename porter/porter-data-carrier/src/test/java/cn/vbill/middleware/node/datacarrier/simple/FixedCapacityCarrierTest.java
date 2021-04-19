@@ -1,10 +1,18 @@
-/**
- * All rights Reserved, Designed By Suixingpay.
+/*
+ * Copyright ©2018 vbill.cn.
+ * <p>
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * @author: zhangkewei[zhang_kw@suixingpay.com]
- * @date: 2018年05月02日 11:01
- * @Copyright ©2018 Suixingpay. All rights reserved.
- * 注意：本内容仅限于随行付支付有限公司内部传阅，禁止外泄以及用于其他的商业用途。
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ * </p>
  */
 
 package cn.vbill.middleware.node.datacarrier.simple;
@@ -32,7 +40,8 @@ public class FixedCapacityCarrierTest {
         carrier.printState();
     }
     @Test
-    public void pull() {
+    public void pull() throws InterruptedException {
+        carrier.push("a", "1");
         String value = carrier.pull("a");
         System.out.println("key : a" + ", value : " + value);
         carrier.printState();
@@ -43,7 +52,6 @@ public class FixedCapacityCarrierTest {
         System.out.println("key : a, has : " + has);
         carrier.printState();
     }
-
     @Test
     public void unionTest() throws InterruptedException {
         carrier.push("a", "1");
@@ -63,6 +71,12 @@ public class FixedCapacityCarrierTest {
         for (int i = 0; i < 4; i++) {
             int finalI = i;
             (new Thread(() -> {
+
+                try {
+                    Thread.currentThread().sleep(5000);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
                 try {
                     carrier.push(finalI + "", finalI + "");
                 } catch (InterruptedException e) {
@@ -75,11 +89,10 @@ public class FixedCapacityCarrierTest {
 
         (new Thread(() -> {
             try {
-                Thread.currentThread().sleep(10000);
+                carrier.pull("0");
             } catch (InterruptedException e) {
                 e.printStackTrace();
             }
-            carrier.pull("0");
             carrier.print();
             latch.countDown();
         })).start();

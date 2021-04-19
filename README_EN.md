@@ -1,6 +1,6 @@
 # Porter | [中文](./README.md)
 
-[![GitHub release](https://img.shields.io/badge/release-2.0.2-blue.svg)](https://github.com/sxfad/porter)
+[![GitHub release](https://img.shields.io/badge/release-4.0-blue.svg)](https://github.com/sxfad/porter)
 [![License](https://img.shields.io/badge/license-Apache%202-4EB1BA.svg)](https://www.apache.org/licenses/LICENSE-2.0.html)
 
 
@@ -33,7 +33,7 @@ Porter began in 2017 and provides data synchronization, but it's not just limite
 ### Compile from source
 ```
 git clone https://github.com/sxfad/porter.git
-cd vbill-proter
+cd porter
 git checkout version
 gradle build
 Find the installation package from the build/distributions list
@@ -43,26 +43,35 @@ Find the installation package from the build/distributions list
 [configuration document](https://github.com/sxfad/porter/blob/master/doc/profiles.md)
 
 ```
-	node.id=unique id
-	#cluser
-	node.cluster.strategy=ZOOKEEPER
-	node.cluster.client.url=127.0.0.1:2181
-	node.cluster.client.sessionTimeout=100000	
+porter.id=unique id
+#cluser
+porter.cluster.strategy=ZOOKEEPER
+porter.cluster.client.url=127.0.0.1:2181
+porter.cluster.client.sessionTimeout=100000
+
+#stastistics
+porter.cluster.statistic.sourceType=KAFKA_PRODUCE
+porter.cluster.statistic.servers=127.0.0.1:9200
+porter.cluster.statistic.topic=your kafka topic
+
+#standalone
+porter.cluster.strategy=STANDALONE
+porter.cluster.client.home=./.porter
 ```
 
 ### Run
 ```
 tar zxvf build/distributions/porter-boot-version.tar
-porter-boot-version/bin/startup.sh
+porter-boot-version/bin/porter-boot
 ```
 
 ### Debug
 ```
-porter-boot-version/bin/startup.sh  debug port
+porter-boot-version/bin/porter-boot  debug port
 ```
 ### Operating environment
 ```
-porter-boot-version/bin/startup.sh --spring.profiles.active=Operating environment
+porter-boot-version/bin/porter-boot --spring.profiles.active=Operating environment
 ```
 ### Elegant close
 ```
@@ -75,8 +84,8 @@ porter-boot-version/bin/shutdown.sh
 + [English document](./doc/document_EN.md)
 
 ## Architecture
-
-![architecture_design](doc/img/archetecture.png)
+![architecture_design](doc/img/architecture.png)
+![dataflow](doc/img/workflow.png)
 
 
 ## Screenshot
@@ -85,8 +94,12 @@ porter-boot-version/bin/shutdown.sh
 + [Manager Manual](./doc/manager_manual.md)
 
 
+```
+	manager-boot default website: http://127.0.0.1:8081
+	manager-boot default account: admin admin
+```
+
+
 ## Contact Us
 
 * QQ group：835209101
-
-

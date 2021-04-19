@@ -17,12 +17,17 @@
 
 package cn.vbill.middleware.porter.common.cluster;
 
-import cn.vbill.middleware.porter.common.config.ClusterConfig;
-import cn.vbill.middleware.porter.common.task.TaskEventListener;
-import cn.vbill.middleware.porter.common.cluster.command.ClusterCommand;
-import cn.vbill.middleware.porter.common.dic.ClusterPlugin;
+import cn.vbill.middleware.porter.common.cluster.client.ClusterClient;
+import cn.vbill.middleware.porter.common.lock.DistributedLock;
+import cn.vbill.middleware.porter.common.cluster.event.ClusterListenerEventExecutor;
+import cn.vbill.middleware.porter.common.cluster.config.ClusterConfig;
+import cn.vbill.middleware.porter.common.task.event.TaskEventListener;
+import cn.vbill.middleware.porter.common.cluster.event.command.ClusterCommand;
+import cn.vbill.middleware.porter.common.cluster.dic.ClusterPlugin;
 
 import java.io.IOException;
+import java.util.function.BiConsumer;
+import java.util.function.Consumer;
 
 /**
  * @author: zhangkewei[zhang_kw@suixingpay.com]
@@ -67,10 +72,20 @@ public interface ClusterProvider {
      * @param command
      * @throws Exception
      */
-    void broadcastCommand(ClusterCommand command) throws Exception;
+    void broadcastEvent(ClusterCommand command);
 
     /**
      * 集群插件是否有效
      */
     boolean available();
+
+    /**
+     * 分布式锁功能实现
+     * @return
+     */
+    DistributedLock getLock();
+
+    void registerClusterEvent(ClusterListenerEventExecutor eventExecutor);
+    void broadcastEvent(BiConsumer<ClusterCommand, ClusterClient> block, ClusterCommand command);
+    void broadcastEvent(Consumer<ClusterClient> block);
 }

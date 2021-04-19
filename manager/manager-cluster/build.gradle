@@ -1,2 +1,75 @@
 group 'cn.vbill.middleware.porter.manager'
+apply plugin: 'application'
 archivesBaseName = 'porter-manager-cluster'
+mainClassName = "cn.vbill.middleware.porter.manager.ManagerClusterApplication"
+ext {
+    runJars=archivesBaseName + "-" + version + ".jar"
+    runJarsPlaceHolder="{{RUN_JAR}}"
+    mainClassPlaceHolder="{{MAIN_CLASS}}"
+}
+sourceSets {
+    main {
+    }
+}
+processResources {
+    exclude(
+            // "**/**"
+    )
+}
+
+task moveOutFromJar(type: Copy) {
+    sourceSets.main.resources.srcDirs.each {
+        from it
+        into buildDir.getPath() + "/config"
+    }
+}
+
+processResources.dependsOn moveOutFromJar
+
+jar {
+    doFirst {
+        manifest {
+            if (!configurations.compile.isEmpty()) {
+                attributes(
+                        'Class-Path': configurations.compile.collect{it.getName()}.join(' '),
+                        'Main-Class': mainClassName)
+            }
+        }
+    }
+}
+
+startScripts {
+    doLast {
+        unixScript.text = resources.text.fromFile('script/unixStart.sh').asString()
+                .replace(runJarsPlaceHolder, runJars).replace(mainClassPlaceHolder, mainClassName)
+        windowsScript.text = resources.text.fromFile('script/windowsStart.bat').asString()
+                .replace(runJarsPlaceHolder, runJars).replace(mainClassPlaceHolder, mainClassName)
+    }
+}
+
+distributions {
+    main {
+        contents {
+            from ("script/shutdown.sh") {
+                into "bin"
+                fileMode = 0755
+            }
+            from (buildDir.getPath() + "/config") {
+                into "config"
+            }
+        }
+    }
+}
+
+
+dependencies {
+    compile project(':manager:manager-core')
+    compile "org.springframework.boot:spring-boot-starter-web:${springVersion}"
+    compile("org.springframework.kafka:spring-kafka:2.2.4.RELEASE")
+    compile('org.apache.kafka:kafka-clients:1.0.0'){
+        exclude group:'org.slf4j',module:'slf4j-api'
+    }
+    implementation "com.fasterxml.jackson.core:jackson-databind:2.9.8"
+    testImplementation "org.springframework.boot:spring-boot-starter-actuator:${springVersion}"
+    testImplementation "org.springframework.boot:spring-boot-starter-test:${springVersion}"
+}

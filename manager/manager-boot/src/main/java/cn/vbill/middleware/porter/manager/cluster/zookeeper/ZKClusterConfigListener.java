@@ -17,25 +17,31 @@
 
 package cn.vbill.middleware.porter.manager.cluster.zookeeper;
 
-import cn.vbill.middleware.porter.common.cluster.impl.zookeeper.ZookeeperClusterEvent;
-import com.alibaba.fastjson.JSON;
-import cn.vbill.middleware.porter.common.cluster.ClusterListenerFilter;
-import cn.vbill.middleware.porter.common.cluster.command.ConfigPushCommand;
-import cn.vbill.middleware.porter.common.cluster.command.broadcast.ConfigPush;
-import cn.vbill.middleware.porter.common.cluster.event.ClusterEvent;
+import cn.vbill.middleware.porter.common.warning.WarningProviderFactory;
+import cn.vbill.middleware.porter.common.cluster.event.ClusterListenerEventExecutor;
+import cn.vbill.middleware.porter.common.cluster.event.ClusterListenerEventType;
+import cn.vbill.middleware.porter.common.cluster.event.executor.TaskPushEventExecutor;
+import cn.vbill.middleware.porter.common.warning.config.WarningConfig;
+import cn.vbill.middleware.porter.common.cluster.event.command.ConfigPushCommand;
+import cn.vbill.middleware.porter.common.cluster.event.ClusterTreeNodeEvent;
 import cn.vbill.middleware.porter.common.cluster.impl.zookeeper.ZookeeperClusterListener;
-import cn.vbill.middleware.porter.common.cluster.impl.zookeeper.ZookeeperClusterListenerFilter;
+import cn.vbill.middleware.porter.common.cluster.ClusterListenerFilter;
+import cn.vbill.middleware.porter.manager.ManagerContext;
+import com.alibaba.fastjson.JSONObject;
 import org.apache.commons.lang3.StringUtils;
+
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * 后台配置推送
  * 
- * @author: zhangkewei[zhang_kw@suixingpay.com]
+ * @author: guohongjian[wszghj@aliyun.com]
  * @date: 2017年12月15日 10:09
  * @version: V1.0
- * @review: zhangkewei[zhang_kw@suixingpay.com]/2017年12月15日 10:09
+ * @review: guohongjian[wszghj@aliyun.com]/2017年12月15日 10:09
  */
-public class ZKClusterConfigListener extends ZookeeperClusterListener implements ConfigPush {
+public class ZKClusterConfigListener extends ZookeeperClusterListener {
     private static final String ZK_PATH = BASE_CATALOG + "/config";
     private static final String LOG_CONFIG_PATH = ZK_PATH + "/log";
     private static final String ALERT_CONFIG_PATH = ZK_PATH + "/alert";
@@ -46,36 +52,55 @@ public class ZKClusterConfigListener extends ZookeeperClusterListener implements
     }
 
     @Override
-    public void onEvent(ClusterEvent event) {
-        logger.info("1-ZKClusterConfigListener....." + JSON.toJSONString(event));
+    public void onEvent(ClusterTreeNodeEvent zkEvent) {
+        logger.info("集群配置参数监听:{},{},{}", zkEvent.getId(), zkEvent.getData(), zkEvent.getEventType());
+        if (zkEvent.isDataChanged() || zkEvent.isOnline()) {
+            if (zkEvent.getId().equals(ALERT_CONFIG_PATH)) {
+                WarningConfig config = JSONObject.parseObject(zkEvent.getData(), WarningConfig.class);
+                try {
+                    WarningProviderFactory.INSTANCE.initialize(config);
+                    ManagerContext.INSTANCE.addWarningReceivers(config.getReceiver());
+                } catch (Throwable e) {
+                    logger.warn("告警客户端初始化失败", e);
+                }
+            }
+        }
     }
 
     @Override
     public ClusterListenerFilter filter() {
-        return new ZookeeperClusterListenerFilter() {
+        return new ClusterListenerFilter() {
             @Override
-            protected String getPath() {
+            public String getPath() {
                 return listenPath();
             }
 
             @Override
-            protected boolean doFilter(ZookeeperClusterEvent event) {
-                return false;
+            public boolean doFilter(ClusterTreeNodeEvent event) {
+                return true;
             }
         };
     }
 
     @Override
-    public void push(ConfigPushCommand command) throws Exception {
-        String configPath = "";
-        if (command.getType().isLog()) {
-            configPath = LOG_CONFIG_PATH;
-        } else if (command.getType().isAlert()) {
-            configPath = ALERT_CONFIG_PATH;
-        }
+    public List<ClusterListenerEventExecutor> watchedEvents() {
+        List<ClusterListenerEventExecutor> executors = new ArrayList<>();
+        //任务上传事件
+        executors.add(new TaskPushEventExecutor(this.getClass(), true, true, listenPath()));
+        //任务注册
+        executors.add(new ClusterListenerEventExecutor(this.getClass(), ClusterListenerEventType.ConfigPush).bind((clusterCommand, client) -> {
+            ConfigPushCommand command = (ConfigPushCommand) clusterCommand;
+            String configPath = "";
+            if (command.getType().isLog()) {
+                configPath = LOG_CONFIG_PATH;
+            } else if (command.getType().isAlert()) {
+                configPath = ALERT_CONFIG_PATH;
+            }
 
-        if (!StringUtils.isBlank(configPath)) {
-            client.changeData(configPath, false, false, command.render());
-        }
+            if (!StringUtils.isBlank(configPath)) {
+                client.changeData(configPath, false, false, command.render());
+            }
+        }, client));
+        return executors;
     }
 }

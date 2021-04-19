@@ -17,17 +17,20 @@
 
 package cn.vbill.middleware.porter.manager.controller;
 
-import cn.vbill.middleware.porter.manager.service.NodesService;
 import cn.vbill.middleware.porter.common.cluster.ClusterProviderProxy;
-import cn.vbill.middleware.porter.common.cluster.command.NodeOrderPushCommand;
-import cn.vbill.middleware.porter.common.config.NodeCommandConfig;
-import cn.vbill.middleware.porter.common.dic.NodeStatusType;
-import cn.vbill.middleware.porter.common.node.NodeCommandType;
+import cn.vbill.middleware.porter.common.cluster.event.command.NodeOrderPushCommand;
+import cn.vbill.middleware.porter.common.node.config.NodeCommandConfig;
+import cn.vbill.middleware.porter.common.node.dic.NodeStatusType;
+import cn.vbill.middleware.porter.common.node.dic.NodeCommandType;
 import cn.vbill.middleware.porter.manager.core.entity.Nodes;
+import cn.vbill.middleware.porter.manager.service.NodesService;
 import cn.vbill.middleware.porter.manager.web.message.ResponseMessage;
 import cn.vbill.middleware.porter.manager.web.page.Page;
 import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -53,6 +56,8 @@ import static cn.vbill.middleware.porter.manager.web.message.ResponseMessage.ok;
 @RequestMapping("/manager/nodes")
 public class NodesController {
 
+    private Logger log = LoggerFactory.getLogger(NodesController.class);
+
     @Autowired
     protected NodesService nodesService;
 
@@ -62,17 +67,18 @@ public class NodesController {
      * @author FuZizheng
      * @date 2018/3/16 下午3:34
      * @param: [pageNo,
-     *             pageSize, ipAddress, state, machineName, type]
+     * pageSize, ipAddress, state, machineName, type]
      * @return: ResponseMessage
      */
     @GetMapping
     @ApiOperation(value = "查询列表", notes = "查询列表")
     public ResponseMessage list(@RequestParam(value = "pageNo", required = true) Integer pageNo,
-            @RequestParam(value = "pageSize", required = true) Integer pageSize,
-            @RequestParam(value = "ipAddress", required = false) String ipAddress,
-            @RequestParam(value = "state", required = false) Integer state,
-            @RequestParam(value = "machineName", required = false) String machineName) {
-        Page<Nodes> page = nodesService.page(new Page<Nodes>(pageNo, pageSize), ipAddress, state, machineName);
+                                @RequestParam(value = "pageSize", required = true) Integer pageSize,
+                                @RequestParam(value = "nodeId", required = false) String nodeId,
+                                @RequestParam(value = "ipAddress", required = false) String ipAddress,
+                                @RequestParam(value = "state", required = false) Integer state,
+                                @RequestParam(value = "machineName", required = false) String machineName) {
+        Page<Nodes> page = nodesService.page(new Page<Nodes>(pageNo, pageSize), nodeId, ipAddress, state, machineName);
         return ok(page);
     }
 
@@ -122,7 +128,7 @@ public class NodesController {
     }
 
     /**
-     * 任务状态推送
+     * 节点状态推送
      *
      * @author FuZizheng
      * @date 2018/7/25 下午5:34
@@ -130,16 +136,24 @@ public class NodesController {
      * @return: cn.vbill.middleware.porter.manager.web.message.ResponseMessage
      */
     @PostMapping("/taskpushstate")
-    @ApiOperation(value = "任务状态推送", notes = "任务状态推送")
+    @ApiOperation(value = "节点状态推送", notes = "节点状态推送")
     public ResponseMessage taskPushState(@RequestParam(value = "id", required = true) Long id,
-            @RequestParam(value = "taskPushState", required = true) NodeStatusType taskPushState) throws Exception {
+            @RequestParam(value = "taskPushState", required = true) NodeStatusType taskPushState) {
         Integer i = nodesService.taskPushState(id, taskPushState);
         if (i == 1) {
-            Nodes nodes = nodesService.selectById(id);
-            ClusterProviderProxy.INSTANCE.broadcast(new NodeOrderPushCommand(
-                    new NodeCommandConfig(nodes.getNodeId().toString(), taskPushState, NodeCommandType.CHANGE_STATUS)));
-            return ok(nodes);
+            try {
+                Nodes nodes = nodesService.selectById(id);
+                ClusterProviderProxy.INSTANCE
+                        .broadcastEvent(new NodeOrderPushCommand(new NodeCommandConfig(nodes.getNodeId().toString(),
+                                taskPushState, NodeCommandType.CHANGE_STATUS)));
+                log.debug("节点id[{}],节点状态[{}]推送zk成功！", id, taskPushState.getName());
+                return ok(nodes);
+            } catch (Exception e) {
+                log.error("节点id[{}],节点状态[{}]推送zk失败！", id, taskPushState.getName(), e);
+                return ok(false);
+            }
         }
+        log.warn("节点id[{}]未找到相应数据,无法完成推送！", id, taskPushState.getName());
         return ok(false);
     }
 
@@ -157,7 +171,7 @@ public class NodesController {
         // System.out.println("停止任务:" + id);
         Nodes nodes = nodesService.selectById(id);
         ClusterProviderProxy.INSTANCE
-                .broadcast(new NodeOrderPushCommand(new NodeCommandConfig(nodes.getNodeId().toString(),
+                .broadcastEvent(new NodeOrderPushCommand(new NodeCommandConfig(nodes.getNodeId().toString(),
                         NodeStatusType.SUSPEND, NodeCommandType.RELEASE_WORK)));
         return ok();
     }

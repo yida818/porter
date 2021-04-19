@@ -17,10 +17,13 @@
 
 package cn.vbill.middleware.porter.core;
 
-import cn.vbill.middleware.porter.common.cluster.data.DNode;
-import cn.vbill.middleware.porter.common.dic.NodeHealthLevel;
-import cn.vbill.middleware.porter.common.dic.NodeStatusType;
-import cn.vbill.middleware.porter.common.node.Node;
+import cn.vbill.middleware.porter.common.statistics.DNode;
+import cn.vbill.middleware.porter.common.cluster.dic.ClusterPlugin;
+import cn.vbill.middleware.porter.common.node.dic.NodeHealthLevel;
+import cn.vbill.middleware.porter.common.node.dic.NodeStatusType;
+import cn.vbill.middleware.porter.common.node.entity.Node;
+import cn.vbill.middleware.porter.common.warning.entity.WarningMessage;
+import cn.vbill.middleware.porter.common.warning.entity.WarningReceiver;
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
 
@@ -28,8 +31,7 @@ import org.apache.commons.lang3.tuple.ImmutablePair;
 import org.apache.commons.lang3.tuple.Pair;
 import org.springframework.context.ApplicationContext;
 
-import java.util.Collections;
-import java.util.Map;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
@@ -49,11 +51,15 @@ public enum NodeContext {
     private final ReadWriteLock nodeLock = new ReentrantReadWriteLock();
     private final Node node = new Node();
 
-    private final Map<String, String> taskErrorMarked = new ConcurrentHashMap<>();
+    private final Map<List<String>, WarningMessage> taskErrorMarked = new ConcurrentHashMap<>();
     private final Map<String, Object> consumeProcess = new ConcurrentHashMap<>();
     private final Map<String, Object> consumerIdle = new ConcurrentHashMap<>();
+    private final List<String> startupArgs = new ArrayList<>();
 
-    private ApplicationContext context;
+    private volatile ApplicationContext context;
+
+    private volatile boolean force;
+    private volatile List<WarningReceiver> receivers = new ArrayList<>();
 
     /**
      * 获取Bean
@@ -309,8 +315,15 @@ public enum NodeContext {
      * @param: [taskId]
      * @return: void
      */
+    public void removeTaskError(List<String> key) {
+        taskErrorMarked.remove(key);
+        if (taskErrorMarked.isEmpty()) {
+            syncHealthLevel(NodeHealthLevel.GREEN, "");
+        }
+    }
+
     public void removeTaskError(String taskId) {
-        taskErrorMarked.remove(taskId);
+        taskErrorMarked.keySet().stream().filter(key -> key.get(0).equals(taskId)).forEach(key -> taskErrorMarked.remove(key));
         if (taskErrorMarked.isEmpty()) {
             syncHealthLevel(NodeHealthLevel.GREEN, "");
         }
@@ -323,9 +336,9 @@ public enum NodeContext {
      * @param: [taskId, e]
      * @return: void
      */
-    public void markTaskError(String taskId, String e) {
-        taskErrorMarked.put(taskId, taskId);
-        syncHealthLevel(NodeHealthLevel.RED, e);
+    public void markTaskError(List<String> key, WarningMessage e) {
+        taskErrorMarked.put(key, e);
+        syncHealthLevel(NodeHealthLevel.RED, e.getErrorCode().name());
     }
 
     /**
@@ -346,8 +359,12 @@ public enum NodeContext {
      * @param: [key, position]
      * @return: void
      */
-    public void flushConsumeProcess(String key, String position) {
-        consumeProcess.put(key, position);
+    public void flushConsumeProcess(String taskId, String swimlaneId, String position) {
+        consumeProcess.put(taskId + "_" + swimlaneId, position);
+    }
+
+    public void clearConsumeProcess(String taskId, String swimlaneId) {
+        consumeProcess.remove(taskId + "_" + swimlaneId);
     }
 
     /**
@@ -365,8 +382,10 @@ public enum NodeContext {
         }
     }
 
-    public Map<String, String> getTaskErrorMarked() {
-        return Collections.unmodifiableMap(taskErrorMarked);
+    public List<String> getTaskErrorMarked() {
+        List<String> warning = new ArrayList<>();
+        taskErrorMarked.forEach((k, v) -> warning.add(v.getTitle()));
+        return warning;
     }
 
     /**
@@ -385,5 +404,60 @@ public enum NodeContext {
 
     public String[] getEnvironment() {
         return context.getEnvironment().getActiveProfiles();
+    }
+
+    public void workMode(ClusterPlugin mode) {
+        try {
+            nodeLock.writeLock().lock();
+            node.setWorkMode(mode);
+        } finally {
+            nodeLock.writeLock().unlock();
+        }
+    }
+
+    public ClusterPlugin getWorkMode() {
+        try {
+            nodeLock.readLock().lock();
+            return node.getWorkMode();
+        } finally {
+            nodeLock.readLock().unlock();
+        }
+    }
+
+    public void startupArgs(String[] args) {
+        try {
+            nodeLock.writeLock().lock();
+            startupArgs.addAll(Arrays.asList(args));
+            node.setForceAssign(startupArgs.stream().filter(e -> e.equals(Node.FORCE_ASSIGN_SIGN)).count() > 0);
+        } finally {
+            nodeLock.writeLock().unlock();
+        }
+    }
+
+    public boolean forceAssign() {
+        try {
+            nodeLock.readLock().lock();
+            return node.isForceAssign();
+        } finally {
+            nodeLock.readLock().unlock();
+        }
+    }
+
+    public String getAddress() {
+        try {
+            nodeLock.readLock().lock();
+            return node.getDnodeSnapshot().getAddress();
+        } finally {
+            nodeLock.readLock().unlock();
+        }
+    }
+
+    public synchronized void addWarningReceivers(WarningReceiver[] newReceivers) {
+        receivers.clear();
+        receivers.addAll(Arrays.asList(newReceivers));
+    }
+
+    public final List<WarningReceiver> getReceivers() {
+        return receivers;
     }
 }

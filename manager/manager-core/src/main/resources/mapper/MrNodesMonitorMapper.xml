@@ -1,0 +1,113 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="cn.vbill.middleware.porter.manager.core.mapper.MrNodesMonitorMapper">
+    <!-- 通用查询映射结果
+    <resultMap id="BaseResultMap" type="MrNodesMonitor">
+        <result column="id" property="id" />
+        <result column="node_id" property="nodeId" />
+        <result column="monitor_date" property="monitorDate" />
+        <result column="monitor_ymd" property="monitorYmd" />
+        <result column="monitor_hour" property="monitorHour" />
+        <result column="monitor_minute" property="monitorMinute" />
+        <result column="monitor_second" property="monitorSecond" />
+        <result column="monitor_tps" property="monitorTps" />
+        <result column="monitor_alarm" property="monitorAlarm" />
+        <result column="partition_day" property="partitionDay" />
+    </resultMap>-->
+
+    <!-- 通用查询结果列
+    <sql id="Base_Column_List">
+        select id, node_id AS nodeId, monitor_date AS monitorDate, monitor_ymd AS monitorYmd, monitor_hour AS monitorHour, monitor_minute AS monitorMinute, monitor_second AS monitorSecond, monitor_tps AS monitorTps, monitor_alarm AS monitorAlarm, partition_day AS partitionDay from mr_nodes_monitor
+    </sql>-->
+
+    <!-- 新增 -->
+    <insert id="insert">
+        insert into ${monitorTable}(
+        node_id,
+        monitor_date,
+        monitor_ymd,
+        monitor_hour,
+        monitor_minute,
+        monitor_second,
+        monitor_tps,
+        monitor_alarm,
+        partition_day
+        ) values (
+        #{mrNodesMonitor.nodeId},
+        #{mrNodesMonitor.monitorDate},
+        #{mrNodesMonitor.monitorYmd},
+        #{mrNodesMonitor.monitorHour},
+        #{mrNodesMonitor.monitorMinute},
+        #{mrNodesMonitor.monitorSecond},
+        #{mrNodesMonitor.monitorTps},
+        #{mrNodesMonitor.monitorAlarm},
+        #{mrNodesMonitor.partitionDay}
+        )
+    </insert>
+
+    <!-- 修改 -->
+    <update id="update">
+        update ${monitorTable}
+        set
+        monitor_tps = #{mrNodesMonitor.monitorTps},
+        monitor_alarm = #{mrNodesMonitor.monitorAlarm}
+        where id = #{id}
+    </update>
+
+    <!-- 刪除 -->
+    <delete id="delete">
+        delete from mr_nodes_monitor where id = #{id}
+    </delete>
+
+    <!-- 根据主鍵查找 -->
+    <select id="selectById" resultType="cn.vbill.middleware.porter.manager.core.entity.MrNodesMonitor">
+        select id, node_id AS nodeId, monitor_date AS monitorDate, monitor_ymd AS monitorYmd, monitor_hour AS monitorHour, monitor_minute AS monitorMinute, monitor_second AS monitorSecond, monitor_tps AS monitorTps, monitor_alarm AS monitorAlarm, partition_day AS partitionDay from mr_nodes_monitor
+        where id = #{id}
+    </select>
+
+    <!-- 根据节点id和时间yyyyMMddHHmm查找数据 -->
+    <select id="selectByNodeIdAndTime" resultType="cn.vbill.middleware.porter.manager.core.entity.MrNodesMonitor">
+        select id, monitor_tps AS monitorTps, monitor_alarm AS monitorAlarm from ${monitorTable}
+        where node_id = #{nodeId} and date_format(monitor_date,'%Y-%m-%d %H:%i:%s') = #{dataTimes}
+    </select>
+
+    <!-- 分页All -->
+    <select id="pageAll" resultType="java.lang.Integer">
+        select count(id) from mr_nodes_monitor
+        where 1=1
+    </select>
+
+    <!-- 分页 -->
+    <select id="page" resultType="cn.vbill.middleware.porter.manager.core.entity.MrNodesMonitor">
+        select id, node_id AS nodeId, monitor_date AS monitorDate, monitor_ymd AS monitorYmd, monitor_hour AS monitorHour, monitor_minute AS monitorMinute, monitor_second AS monitorSecond, monitor_tps AS monitorTps, monitor_alarm AS monitorAlarm, partition_day AS partitionDay from mr_nodes_monitor
+        where 1=1 limit #{page.offset},#{page.pageSize}
+    </select>
+
+    <!-- 节点监控统计 -->
+    <select id="selectByNodeId" resultType="cn.vbill.middleware.porter.manager.core.entity.MrNodesMonitor">
+        select id, node_id AS nodeId, monitor_date AS monitorDate, monitor_ymd AS monitorYmd, monitor_hour AS monitorHour, monitor_minute AS monitorMinute, monitor_second AS monitorSecond, monitor_tps AS monitorTps, monitor_alarm AS monitorAlarm, partition_day AS partitionDay from mr_nodes_monitor
+        WHERE node_id = #{nodeId} ORDER BY monitor_date DESC
+        limit #{startRow},#{intervalTime}
+    </select>
+
+    <!-- 节点监控统计 增加查询过去某天的节点数据 -->
+    <select id="selectByNodeIdDetail" resultType="cn.vbill.middleware.porter.manager.core.entity.MrNodesMonitor">
+        SELECT
+        id,
+        node_id AS nodeId,
+        monitor_date AS monitorDate,
+        monitor_ymd AS monitorYmd,
+        monitor_hour AS monitorHour,
+        monitor_minute AS monitorMinute,
+        monitor_second AS monitorSecond,
+        monitor_tps AS monitorTps,
+        monitor_alarm AS monitorAlarm,
+        partition_day AS partitionDay
+        FROM
+        ${monitorTable}
+        WHERE
+          node_id = #{nodeId} and monitor_date between #{startDate} and #{endDate}
+        ORDER BY monitor_date
+    </select>
+</mapper>
+

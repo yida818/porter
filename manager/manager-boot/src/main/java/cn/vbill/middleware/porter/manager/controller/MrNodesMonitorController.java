@@ -28,6 +28,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.text.ParseException;
+
 import static cn.vbill.middleware.porter.manager.web.message.ResponseMessage.ok;
 
 /**
@@ -60,6 +62,25 @@ public class MrNodesMonitorController {
                                        @RequestParam(value = "intervalTime", required = false) Long intervalTime,
                                        @RequestParam(value = "intervalCount", required = false) Long intervalCount) {
         MrNodeMonitor mrNodeMonitor = mrNodesMonitorService.obNodeMonitor(nodeId, intervalTime, intervalCount);
+        return ok(mrNodeMonitor);
+    }
+
+    /**
+     * 节点实时数据(增加查询以前的某一天的节点数据)
+     *
+     * @param nodeId
+     * @param date
+     * @param intervalTime
+     * @param intervalCount
+     * @return
+     */
+    @GetMapping("/nodeMonitorDetail")
+    @ApiOperation(value = "节点实时数据(按分)", notes = "节点实时数据(按分),增加查看过去某一天的节点数据")
+    public ResponseMessage nodeMonitorDetail(@RequestParam(value = "nodeId", required = false) String nodeId,
+                                             @RequestParam(value = "date", required = true) String date,
+                                             @RequestParam(value = "intervalTime", required = false) Integer intervalTime,
+                                             @RequestParam(value = "intervalCount", required = false) Integer intervalCount) throws ParseException {
+        MrNodeMonitor mrNodeMonitor = mrNodesMonitorService.obNodeMonitorDetail(nodeId, date, intervalTime, intervalCount);
         return ok(mrNodeMonitor);
     }
 

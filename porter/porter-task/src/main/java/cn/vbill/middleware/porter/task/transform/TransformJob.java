@@ -17,13 +17,13 @@
 
 package cn.vbill.middleware.porter.task.transform;
 
-import cn.vbill.middleware.porter.common.exception.TaskStopTriggerException;
+import cn.vbill.middleware.porter.common.task.exception.TaskStopTriggerException;
 import cn.vbill.middleware.porter.core.NodeContext;
-import cn.vbill.middleware.porter.core.task.StageType;
+import cn.vbill.middleware.porter.core.task.job.StageType;
 import cn.vbill.middleware.porter.datacarrier.simple.FixedCapacityCarrier;
 import cn.vbill.middleware.porter.task.transform.transformer.TransformFactory;
-import cn.vbill.middleware.porter.core.event.etl.ETLBucket;
-import cn.vbill.middleware.porter.core.task.AbstractStageJob;
+import cn.vbill.middleware.porter.core.task.setl.ETLBucket;
+import cn.vbill.middleware.porter.core.task.job.AbstractStageJob;
 import cn.vbill.middleware.porter.datacarrier.DataMapCarrier;
 import cn.vbill.middleware.porter.task.worker.TaskWork;
 import org.slf4j.Logger;
@@ -78,69 +78,50 @@ public class TransformJob extends AbstractStageJob {
     protected void doStart() {
 
     }
-
     @Override
-    protected void loopLogic() {
+    protected void loopLogic() throws InterruptedException {
         //只要队列有消息，持续读取
-        ETLBucket bucket = null;
-        do {
+        while (getWorkingStat()) {
             try {
-                bucket = work.waitEvent(StageType.EXTRACT);
+                ETLBucket bucket = work.waitEvent(StageType.EXTRACT);
                 if (null != bucket) {
                     LOGGER.debug("transform ETLBucket batch {} begin.", bucket.getSequence());
                     final ETLBucket inThreadBucket = bucket;
                     Future<ETLBucket> result = executorService.submit(() -> {
+                        //上个流程处理没有异常
                         try {
-                            //上个流程处理没有异常
                             if (null == inThreadBucket.getException()) {
                                 transformFactory.transform(inThreadBucket, work);
                             }
-                        } catch (Throwable e) {
-                            e.printStackTrace();
-                            inThreadBucket.tagException(new TaskStopTriggerException(e));
-                            LOGGER.error("批次[{}]执行TransformJob失败!", inThreadBucket.getSequence(), e);
+                        } catch (Throwable stopError) {
+                            LOGGER.error("批次[{}]执行TransformJob失败!", inThreadBucket.getSequence(), stopError);
+                            work.interruptWithWarning(stopError.getMessage());
+                            executorService.shutdownNow();
                         }
                         return inThreadBucket;
                     });
+                    if (!getWorkingStat() && !work.isWorking()) break;
                     LOGGER.debug("transform ETLBucket batch {} end.", bucket.getSequence());
                     carrier.push(inThreadBucket.getSequence(), result);
                     carrier.printState();
                 }
-            } catch (Throwable e) {
-                LOGGER.error("transform ETLBucket error!", e);
+            } catch (TaskStopTriggerException stopError) {
+                LOGGER.error("TransformJob error", stopError);
+                work.interruptWithWarning(stopError.getMessage());
+                break;
             }
-        } while (null != bucket);
+        }
     }
 
     @Override
-    public ETLBucket output() throws ExecutionException, InterruptedException {
-        String sequence = work.waitSequence();
-        Future<ETLBucket> result = null;
-        if (null != sequence) {
-            LOGGER.debug("got sequence:{}, Future: {}", sequence, carrier.containsKey(sequence));
-            long waitTime = 0;
-            long peerWaitTime = 50;
-            //等待该sequence对应的ETLBucket transform完成。捕获InterruptedException异常,是为了保证该sequence能够被处理。
-            while (null != sequence && !carrier.containsKey(sequence)) {
-                LOGGER.debug("waiting sequence Future:{}", sequence);
-                //等待超过5分钟，释放任务
-                if (waitTime > 1000 * 60 * 5) {
-                    String msg = "等待批次" + sequence + "SET完成超时(5m)，任务退出。";
-                    LOGGER.error(msg);
-                    work.stopAndAlarm(msg);
-                    break;
-                }
-                try {
-                    waitTime += peerWaitTime;
-                    Thread.sleep(peerWaitTime);
-                } catch (InterruptedException e) {
-                    Thread.interrupted();
-                }
-            }
-            LOGGER.debug("got sequence:{}, Future: {}", sequence, carrier.containsKey(sequence));
-            result = carrier.pull(sequence);
+    public ETLBucket output() throws InterruptedException, TaskStopTriggerException {
+        try {
+            String sequence = work.waitSequence();
+            Future<ETLBucket> result = null != sequence ? carrier.pull(sequence) : null;
+            return null != result ? result.get() : null;
+        } catch (ExecutionException e) {
+            throw new TaskStopTriggerException(e);
         }
-        return null != result ? result.get() : null;
     }
 
     @Override
@@ -156,5 +137,10 @@ public class TransformJob extends AbstractStageJob {
     @Override
     public boolean stopWaiting() {
         return work.getDataConsumer().isAutoCommitPosition();
+    }
+
+    @Override
+    protected boolean workingStat() {
+        return work.isWorking();
     }
 }

@@ -45,12 +45,17 @@ public class WebMvcConfigAdapter extends WebMvcConfigurerAdapter {
     /**
      * LOGIN_URL_PATTERNS
      */
-    public static final String LOGIN_URL_PATTERNS = "/manager/login,/manager/register";
+    public static final String LOGIN_URL_PATTERNS = "/manager/login,/manager/register,/manager/checkLoginName";
 
     /**
      * ALARM_URL_PATTERNS
      */
-    public static final String ALARM_URL_PATTERNS = "/alarm/task/check,/manager/ogg/tables";
+    public static final String ALARM_URL_PATTERNS = "/alarm/task/check,/alarm/task/restart";
+
+    /**
+     * porter-ui
+     */
+    public static final String PORTER_UI_URL_PATTERNS = "/static,/login.html,/favicon.ico";
 
     @Autowired
     private XTokenInterceptor xtokenInterceptor;
@@ -60,7 +65,8 @@ public class WebMvcConfigAdapter extends WebMvcConfigurerAdapter {
         registry.addInterceptor(xtokenInterceptor).addPathPatterns("/**")
                 .excludePathPatterns(ALARM_URL_PATTERNS.split(","))
                 .excludePathPatterns(SWAGER_URL_PATTERNS.split(","))
-                .excludePathPatterns(LOGIN_URL_PATTERNS.split(","));
+                .excludePathPatterns(LOGIN_URL_PATTERNS.split(","))
+                .excludePathPatterns(PORTER_UI_URL_PATTERNS.split(","));
     }
 
     @Override
@@ -76,5 +82,4 @@ public class WebMvcConfigAdapter extends WebMvcConfigurerAdapter {
         converters.add(jackson2HttpMessageConverter);
         super.configureMessageConverters(converters);
     }
-
 }

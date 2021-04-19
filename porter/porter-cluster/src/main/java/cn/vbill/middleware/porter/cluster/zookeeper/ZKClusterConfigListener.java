@@ -20,20 +20,21 @@ package cn.vbill.middleware.porter.cluster.zookeeper;
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.LoggerContext;
-import com.alibaba.fastjson.JSONObject;
-import cn.vbill.middleware.porter.common.alert.AlertProviderFactory;
 import cn.vbill.middleware.porter.common.cluster.ClusterListenerFilter;
-import cn.vbill.middleware.porter.common.cluster.event.ClusterEvent;
-import cn.vbill.middleware.porter.common.cluster.impl.zookeeper.ZookeeperClusterEvent;
+import cn.vbill.middleware.porter.common.cluster.event.ClusterListenerEventExecutor;
+import com.alibaba.fastjson.JSONObject;
+import cn.vbill.middleware.porter.common.warning.WarningProviderFactory;
+import cn.vbill.middleware.porter.common.cluster.event.ClusterTreeNodeEvent;
 import cn.vbill.middleware.porter.common.cluster.impl.zookeeper.ZookeeperClusterListener;
-import cn.vbill.middleware.porter.common.cluster.impl.zookeeper.ZookeeperClusterListenerFilter;
-import cn.vbill.middleware.porter.common.config.AlertConfig;
-import cn.vbill.middleware.porter.common.config.LogConfig;
+import cn.vbill.middleware.porter.common.warning.config.WarningConfig;
+import cn.vbill.middleware.porter.common.node.config.LogConfig;
 import cn.vbill.middleware.porter.common.config.StatisticConfig;
 import cn.vbill.middleware.porter.common.exception.ClientConnectionException;
 import cn.vbill.middleware.porter.common.exception.ConfigParseException;
 import cn.vbill.middleware.porter.core.NodeContext;
 import org.slf4j.LoggerFactory;
+
+import java.util.List;
 
 /**
  * 节点监听
@@ -55,12 +56,16 @@ public class ZKClusterConfigListener extends ZookeeperClusterListener {
     }
 
     @Override
-    public void onEvent(ClusterEvent event) {
-        ZookeeperClusterEvent zkEvent = (ZookeeperClusterEvent) event;
-        logger.info("集群配置参数监听:{},{},{}", zkEvent.getPath(), zkEvent.getData(), zkEvent.getEventType());
-        if (zkEvent.isDataChanged() || zkEvent.isOnline()) {
+    public List<ClusterListenerEventExecutor> watchedEvents() {
+        return null;
+    }
+
+    @Override
+    public void onEvent(ClusterTreeNodeEvent event) {
+        logger.info("集群配置参数监听:{},{},{}", event.getId(), event.getData(), event.getEventType());
+        if (event.isDataChanged() || event.isOnline()) {
             //日志
-            if (zkEvent.getPath().equals(LOG_CONFIG_PATH)) {
+            if (event.getId().equals(LOG_CONFIG_PATH)) {
                 //转换配置参数问java对象
                 LogConfig config = JSONObject.parseObject(event.getData(), LogConfig.class);
                 //获取Logger上下文
@@ -69,20 +74,21 @@ public class ZKClusterConfigListener extends ZookeeperClusterListener {
                 loggerContext.getLogger(Logger.ROOT_LOGGER_NAME).setLevel(Level.toLevel(config.getLevel(), Level.INFO));
             }
             //告警
-            if (zkEvent.getPath().equals(ALERT_CONFIG_PATH)) {
-                AlertConfig config = JSONObject.parseObject(event.getData(), AlertConfig.class);
+            if (event.getId().equals(ALERT_CONFIG_PATH)) {
+                WarningConfig config = JSONObject.parseObject(event.getData(), WarningConfig.class);
                 try {
-                    AlertProviderFactory.INSTANCE.initialize(config);
+                    WarningProviderFactory.INSTANCE.initialize(config);
+                    NodeContext.INSTANCE.addWarningReceivers(config.getReceiver());
                 } catch (ConfigParseException e) {
-                    e.printStackTrace();
-                    logger.error("%s", e);
+                    logger.warn("解析告警任务配置失败", e);
                 } catch (ClientConnectionException e) {
-                    e.printStackTrace();
-                    logger.error("%s", e);
+                    logger.warn("告警客户端连接失败", e);
+                } catch (InterruptedException e) {
+                    logger.warn("告警客户端连接失败, 线程被中断", e);
                 }
             }
             //统计分析
-            if (zkEvent.getPath().equals(STATISTIC_CONFIG_PATH)) {
+            if (event.getId().equals(STATISTIC_CONFIG_PATH)) {
                 StatisticConfig config = JSONObject.parseObject(event.getData(), StatisticConfig.class);
                 NodeContext.INSTANCE.syncUploadStatistic(config.isUpload());
             }
@@ -91,16 +97,16 @@ public class ZKClusterConfigListener extends ZookeeperClusterListener {
 
     @Override
     public ClusterListenerFilter filter() {
-        return new ZookeeperClusterListenerFilter() {
+        return new ClusterListenerFilter() {
             @Override
-            protected String getPath() {
+            public String getPath() {
                 return listenPath();
             }
 
             @Override
-            protected boolean doFilter(ZookeeperClusterEvent event) {
+            public boolean doFilter(ClusterTreeNodeEvent event) {
                 //应用自身，跳过
-                return !event.getPath().equals(getPath() + "/" + NodeContext.INSTANCE.getNodeId());
+                return !event.getId().equals(getPath() + "/" + NodeContext.INSTANCE.getNodeId());
             }
         };
     }

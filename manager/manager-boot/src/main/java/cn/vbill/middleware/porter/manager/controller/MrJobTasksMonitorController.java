@@ -30,6 +30,8 @@ import cn.vbill.middleware.porter.manager.web.message.ResponseMessage;
 import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;
 
+import java.text.ParseException;
+
 /**
  * 任务泳道实时监控表 controller控制器
  *
@@ -62,6 +64,29 @@ public class MrJobTasksMonitorController {
             @RequestParam(value = "intervalCount", required = true) Long intervalCount) {
         MrJobMonitor mrJobMonitor = mrJobTasksMonitorService.obMrJobMonitor(jobId, swimlaneId, schemaTable,
                 intervalTime, intervalCount);
+        return ResponseMessage.ok(mrJobMonitor);
+    }
+
+    /**
+     * 任务泳道实时数据
+     *
+     * @param jobId
+     * @param swimlaneId
+     * @param schemaTable
+     * @param date
+     * @param intervalTime
+     * @param intervalCount
+     * @return
+     */
+    @ApiOperation(value = "任务泳道实时数据(按分)", notes = "任务泳道实时数据(按分)")
+    @GetMapping("/jobMonitorDetail")
+    public ResponseMessage jobMonitorDetail(@RequestParam(value = "jobId", required = true) String jobId,
+                                            @RequestParam(value = "swimlaneId", required = true) String swimlaneId,
+                                            @RequestParam(value = "schemaTable", required = true) String schemaTable,
+                                            @RequestParam(value = "monitorDate", required = true) String date,
+                                            @RequestParam(value = "intervalTime", required = false) Integer intervalTime,
+                                            @RequestParam(value = "intervalCount", required = true) Integer intervalCount) throws ParseException {
+        MrJobMonitor mrJobMonitor = mrJobTasksMonitorService.obMrJobMonitorDetail(jobId, swimlaneId, schemaTable, date, intervalTime, intervalCount);
         return ResponseMessage.ok(mrJobMonitor);
     }
 }

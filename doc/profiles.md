@@ -13,7 +13,7 @@
 
 ```
 	spring-boot配置文件，可配置运行环境(spring.profiles.active)等，详情参考spring-boot官方文档。
-	同样可通过startup.sh脚本指定上述参数,例如 startup.sh --logging.level.root=debug
+	同样可通过porter-boot脚本指定上述参数,例如 porter-boot --logging.level.root=debug
 ```
 
 - config/application-${env}.properties
@@ -63,6 +63,7 @@
 
 ```
 	分布式集群实现，当前仅支持zookeeper
+	详细配置在ClusterConfig.java
 ```
 
 
@@ -71,6 +72,7 @@
 
 ```
 	指定分布式集群的实现策略 
+	候选项:ZOOKEEPER、STANDALONE
 	eg.
 		porter.cluster.strategy=ZOOKEEPER
 ```
@@ -79,6 +81,7 @@
 
 ```
 	集群连接参数
+	ZOOKEEPER模式参数
 	eg.
 		porter.cluster.client.url=127.0.0.1:2181
 ```
@@ -87,8 +90,29 @@
 
 ```
 	集群连接超时时间
+	ZOOKEEPER模式参数
 	eg.
 		porter.cluster.client.sessionTimeout=超时时间，单位为毫秒。
+```
+
+- porter.cluster.client.home
+
+```
+	元信息存储目录
+	STANDALONE模式参数
+	eg.
+		porter.cluster.client.home=路径
+```
+
+- porter.cluster.statistic
+
+```
+    统计指标数据上传目标端链接信息,默认上传到zookeeper。
+    eg.
+    porter.statistic.upload=true
+    porter.cluster.statistic.sourceType=KAFKA_PRODUCE
+    porter.cluster.statistic.servers=127.0.0.1:9092,127.0.0.1:9092
+    porter.cluster.statistic.topic=kafka主题
 ```
 
 ## 告警
@@ -102,6 +126,7 @@
 
 ```
 	指定告警方式
+	候选项:EMAIL、NONE
 	eg.
 		porter.alert.strategy=EMAIL
 ```
@@ -277,6 +302,7 @@
 	porter.task[0].consumer.source.topics=主题
 	porter.task[0].consumer.source.group=消费分组
 	porter.task[0].consumer.source.autoCommit=true|false
+	porter.task[0].consumer.source.partition=分区,默认0(3.0新增)
 	
 ```
 
@@ -406,4 +432,3 @@
 	字段映射,可不配置。
 	porter.task[index].mapper[下标].column.源端字段名=目标端字段名
 ```
-	
